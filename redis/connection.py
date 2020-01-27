@@ -181,6 +181,7 @@ class SocketBuffer(object):
             if custom_timeout:
                 sock.settimeout(timeout)
             while True:
+                read_start = time()
                 data = recv(self._sock, socket_read_size)
                 # an empty string indicates the server shutdown the socket
                 if isinstance(data, bytes) and len(data) == 0:
@@ -194,8 +195,13 @@ class SocketBuffer(object):
                     continue
                 return True
         except socket.timeout:
+            read_end = time()
             if raise_on_timeout:
-                raise TimeoutError("Timeout reading from socket")
+                raise TimeoutError(
+                        "Timeout reading from socket after "
+                        "{} seconds and {} bytes read".format(
+                            str(read_end - read_start),
+                            str(marker)))
             return False
         except NONBLOCKING_EXCEPTIONS as ex:
             # if we're in nonblocking mode and the recv raises a
