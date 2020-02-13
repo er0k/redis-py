@@ -9,6 +9,7 @@ from redis.connection import (
 from redis.utils import from_url
 from redis.exceptions import (
     AuthenticationError,
+    AuthenticationWrongNumberOfArgsError,
     BusyLoadingError,
     ChildDeadlockedError,
     ConnectionError,
@@ -30,11 +31,12 @@ def int_or_str(value):
         return value
 
 
-__version__ = '3.4.0'
+__version__ = '3.4.1'
 VERSION = tuple(map(int_or_str, __version__.split('.')))
 
 __all__ = [
     'AuthenticationError',
+    'AuthenticationWrongNumberOfArgsError',
     'BlockingConnectionPool',
     'BusyLoadingError',
     'ChildDeadlockedError',

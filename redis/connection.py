@@ -17,6 +17,7 @@ from redis._compat import (xrange, imap, byte_to_chr, unicode, long,
                            sendall, shutdown, ssl_wrap_socket)
 from redis.exceptions import (
     AuthenticationError,
+    AuthenticationWrongNumberOfArgsError,
     BusyLoadingError,
     ChildDeadlockedError,
     ConnectionError,
@@ -135,6 +136,14 @@ class BaseParser(object):
             'max number of clients reached': ConnectionError,
             'Client sent AUTH, but no password is set': AuthenticationError,
             'invalid password': AuthenticationError,
+            # some Redis server versions report invalid command syntax
+            # in lowercase
+            'wrong number of arguments for \'auth\' command':
+                AuthenticationWrongNumberOfArgsError,
+            # some Redis server versions report invalid command syntax
+            # in uppercase
+            'wrong number of arguments for \'AUTH\' command':
+                AuthenticationWrongNumberOfArgsError,
         },
         'EXECABORT': ExecAbortError,
         'LOADING': BusyLoadingError,
@@ -291,10 +300,7 @@ class PythonParser(BaseParser):
         self._buffer = None
 
     def __del__(self):
-        try:
-            self.on_disconnect()
-        except Exception:
-            pass
+        self.on_disconnect()
 
     def on_connect(self, connection):
         "Called when the socket connects"
@@ -373,10 +379,7 @@ class HiredisParser(BaseParser):
             self._buffer = bytearray(socket_read_size)
 
     def __del__(self):
-        try:
-            self.on_disconnect()
-        except Exception:
-            pass
+        self.on_disconnect()
 
     def on_connect(self, connection):
         self._sock = connection._sock
@@ -493,14 +496,13 @@ else:
 class Connection(object):
     "Manages TCP communication to and from a Redis server"
 
-    def __init__(self, host='localhost', port=6379, db=0, username=None,
-                 password=None, socket_timeout=None,
-                 socket_connect_timeout=None, socket_keepalive=False,
-                 socket_keepalive_options=None, socket_type=0,
-                 retry_on_timeout=False, encoding='utf-8',
+    def __init__(self, host='localhost', port=6379, db=0, password=None,
+                 socket_timeout=None, socket_connect_timeout=None,
+                 socket_keepalive=False, socket_keepalive_options=None,
+                 socket_type=0, retry_on_timeout=False, encoding='utf-8',
                  encoding_errors='strict', decode_responses=False,
                  parser_class=DefaultParser, socket_read_size=65536,
-                 health_check_interval=0, client_name=None):
+                 health_check_interval=0, client_name=None, username=None):
         self.pid = os.getpid()
         self.host = host
         self.port = int(port)
@@ -537,10 +539,7 @@ class Connection(object):
         return pieces
 
     def __del__(self):
-        try:
-            self.disconnect()
-        except Exception:
-            pass
+        self.disconnect()
 
     def register_connect_callback(self, callback):
         self._connect_callbacks.append(callback)
@@ -636,7 +635,18 @@ class Connection(object):
             # avoid checking health here -- PING will fail if we try
             # to check the health prior to the AUTH
             self.send_command('AUTH', *auth_args, check_health=False)
-            if nativestr(self.read_response()) != 'OK':
+
+            try:
+                auth_response = self.read_response()
+            except AuthenticationWrongNumberOfArgsError:
+                # a username and password were specified but the Redis
+                # server seems to be < 6.0.0 which expects a single password
+                # arg. retry auth with just the password.
+                # https://github.com/andymccurdy/redis-py/issues/1274
+                self.send_command('AUTH', self.password, check_health=False)
+                auth_response = self.read_response()
+
+            if nativestr(auth_response) != 'OK':
                 raise AuthenticationError('Invalid Username or Password')
 
         # if a client_name is given, set it
@@ -672,7 +682,7 @@ class Connection(object):
                 if nativestr(self.read_response()) != 'PONG':
                     raise ConnectionError(
                         'Bad response from PING health check')
-            except (ConnectionError, TimeoutError) as ex:
+            except (ConnectionError, TimeoutError):
                 self.disconnect()
                 self.send_command('PING', check_health=False)
                 if nativestr(self.read_response()) != 'PONG':
@@ -1091,12 +1101,6 @@ class ConnectionPool(object):
         return "%s<%s>" % (
             type(self).__name__,
             repr(self.connection_class(**self.connection_kwargs)),
-        )
-
-    def __eq__(self, other):
-        return (
-            isinstance(other, self.__class__)
-            and self.connection_kwargs == other.connection_kwargs
         )
 
     def reset(self):

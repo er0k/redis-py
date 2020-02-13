@@ -674,7 +674,7 @@ class Redis(object):
         return cls(connection_pool=connection_pool)
 
     def __init__(self, host='localhost', port=6379,
-                 db=0, username=None, password=None, socket_timeout=None,
+                 db=0, password=None, socket_timeout=None,
                  socket_connect_timeout=None,
                  socket_keepalive=None, socket_keepalive_options=None,
                  connection_pool=None, unix_socket_path=None,
@@ -685,7 +685,7 @@ class Redis(object):
                  ssl_cert_reqs='required', ssl_ca_certs=None,
                  ssl_check_hostname=False,
                  max_connections=None, single_connection_client=False,
-                 health_check_interval=0, client_name=None):
+                 health_check_interval=0, client_name=None, username=None):
         if not connection_pool:
             if charset is not None:
                 warnings.warn(DeprecationWarning(
@@ -745,12 +745,6 @@ class Redis(object):
 
     def __repr__(self):
         return "%s<%s>" % (type(self).__name__, repr(self.connection_pool))
-
-    def __eq__(self, other):
-        return (
-            isinstance(other, self.__class__)
-            and self.connection_pool == other.connection_pool
-        )
 
     def set_response_callback(self, command, callback):
         "Set a custom Response Callback"
@@ -3002,12 +2996,23 @@ class Redis(object):
         "Return the number of elements in hash ``name``"
         return self.execute_command('HLEN', name)
 
-    def hset(self, name, key, value):
+    def hset(self, name, key=None, value=None, mapping=None):
         """
-        Set ``key`` to ``value`` within hash ``name``
-        Returns 1 if HSET created a new field, otherwise 0
+        Set ``key`` to ``value`` within hash ``name``,
+        Use ``mappings`` keyword args to set multiple key/value pairs
+        for a hash ``name``.
+        Returns the number of fields that were added.
         """
-        return self.execute_command('HSET', name, key, value)
+        if not key and not mapping:
+            raise DataError("'hset' with no key value pairs")
+        items = []
+        if key:
+            items.extend((key, value))
+        if mapping:
+            for pair in mapping.items():
+                items.extend(pair)
+
+        return self.execute_command('HSET', name, *items)
 
     def hsetnx(self, name, key, value):
         """
@@ -3021,6 +3026,12 @@ class Redis(object):
         Set key to value within hash ``name`` for each corresponding
         key and value from the ``mapping`` dict.
         """
+        warnings.warn(
+            '%s.hmset() is deprecated. Use %s.hset() instead.'
+            % (self.__class__.__name__, self.__class__.__name__),
+            DeprecationWarning,
+            stacklevel=2,
+        )
         if not mapping:
             raise DataError("'hmset' with 'mapping' of length 0")
         items = []
@@ -3364,13 +3375,10 @@ class PubSub(object):
         self.reset()
 
     def __del__(self):
-        try:
-            # if this object went out of scope prior to shutting down
-            # subscriptions, close the connection manually before
-            # returning it to the connection pool
-            self.reset()
-        except Exception:
-            pass
+        # if this object went out of scope prior to shutting down
+        # subscriptions, close the connection manually before
+        # returning it to the connection pool
+        self.reset()
 
     def reset(self):
         if self.connection:
@@ -3719,10 +3727,7 @@ class Pipeline(Redis):
         self.reset()
 
     def __del__(self):
-        try:
-            self.reset()
-        except Exception:
-            pass
+        self.reset()
 
     def __len__(self):
         return len(self.command_stack)
