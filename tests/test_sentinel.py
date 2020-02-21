@@ -20,6 +20,8 @@ class SentinelTestClient(object):
     def sentinel_get_master_addr_by_name(self, service_name):
         self.cluster.connection_error_if_down(self)
         self.cluster.timeout_if_down(self)
+        if service_name != self.cluster.service_name:
+            return None
         return self.cluster.master['ip'], self.cluster.master['port']
 
     def sentinel_slaves(self, master_name):
@@ -102,28 +104,6 @@ def test_discover_master_sentinel_timeout(cluster, sentinel):
     assert sentinel.sentinels[0].id == ('bar', 26379)
 
 
-def test_master_min_other_sentinels(cluster):
-    sentinel = Sentinel([('foo', 26379)], min_other_sentinels=1)
-    # min_other_sentinels
-    with pytest.raises(MasterNotFoundError):
-        sentinel.discover_master('mymaster')
-    cluster.master['num-other-sentinels'] = 2
-    address = sentinel.discover_master('mymaster')
-    assert address == ('127.0.0.1', 6379)
-
-
-def test_master_odown(cluster, sentinel):
-    cluster.master['is_odown'] = True
-    with pytest.raises(MasterNotFoundError):
-        sentinel.discover_master('mymaster')
-
-
-def test_master_sdown(cluster, sentinel):
-    cluster.master['is_sdown'] = True
-    with pytest.raises(MasterNotFoundError):
-        sentinel.discover_master('mymaster')
-
-
 def test_discover_slaves(cluster, sentinel):
     assert sentinel.discover_slaves('mymaster') == []
 
@@ -175,13 +155,6 @@ def test_slave_for(cluster, sentinel):
     ]
     slave = sentinel.slave_for('mymaster', db=9)
     assert slave.ping()
-
-
-def test_slave_for_slave_not_found_error(cluster, sentinel):
-    cluster.master['is_odown'] = True
-    slave = sentinel.slave_for('mymaster', db=9)
-    with pytest.raises(SlaveNotFoundError):
-        slave.ping()
 
 
 def test_slave_round_robin(cluster, sentinel):
