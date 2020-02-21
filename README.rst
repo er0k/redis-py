@@ -1,7 +1,7 @@
 redis-py
 ========
 
-test
+testtest
 
 The Python interface to the Redis key-value store.
 
