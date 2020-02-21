@@ -182,14 +182,6 @@ class Sentinel(object):
             type(self).__name__,
             ','.join(sentinel_addresses))
 
-    def check_master_state(self, state, service_name):
-        if not state['is_master'] or state['is_sdown'] or state['is_odown']:
-            return False
-        # Check if our sentinel doesn't see other nodes
-        if state['num-other-sentinels'] < self.min_other_sentinels:
-            return False
-        return True
-
     def discover_master(self, service_name):
         """
         Asks sentinel servers for the Redis master's address corresponding
@@ -200,15 +192,14 @@ class Sentinel(object):
         """
         for sentinel_no, sentinel in enumerate(self.sentinels):
             try:
-                masters = sentinel.sentinel_masters()
+                master = sentinel.sentinel_get_master_addr_by_name(service_name)
             except (ConnectionError, TimeoutError):
                 continue
-            state = masters.get(service_name)
-            if state and self.check_master_state(state, service_name):
+            if master:
                 # Put this sentinel at the top of the list
                 self.sentinels[0], self.sentinels[sentinel_no] = (
                     sentinel, self.sentinels[0])
-                return state['ip'], state['port']
+                return master[0], master[1]
         raise MasterNotFoundError("No master found for %r" % (service_name,))
 
     def filter_slaves(self, slaves):
