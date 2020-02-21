@@ -17,6 +17,11 @@ class SentinelTestClient(object):
         self.cluster.timeout_if_down(self)
         return {self.cluster.service_name: self.cluster.master}
 
+    def sentinel_get_master_addr_by_name(self, service_name):
+        self.cluster.connection_error_if_down(self)
+        self.cluster.timeout_if_down(self)
+        return self.cluster.master.ip, self.cluster.master.port
+
     def sentinel_slaves(self, master_name):
         self.cluster.connection_error_if_down(self)
         self.cluster.timeout_if_down(self)
