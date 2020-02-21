@@ -1,6 +1,8 @@
 redis-py
 ========
 
+test
+
 The Python interface to the Redis key-value store.
 
 .. image:: https://secure.travis-ci.org/andymccurdy/redis-py.svg?branch=master
